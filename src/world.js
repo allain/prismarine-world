@@ -2,7 +2,6 @@ const Vec3 = require('vec3')
 let Anvil
 const fifo = require('fifo')
 const EventEmitter = require('events').EventEmitter
-const once = require('event-promise')
 
 function columnKeyXZ (chunkX, chunkZ) {
   return chunkX + ',' + chunkZ
@@ -102,7 +101,15 @@ class World extends EventEmitter {
   }
 
   async waitSaving () {
-    await once(this, 'doneSaving')
+    await new Promise(resolve => {
+      let intervalId = setInterval(() => {
+        if (this.savingQueue.length === 0) {
+          clearInterval(intervalId)
+          resolve()
+        }
+      }, 1)
+    })
+    // await once(this, 'doneSaving') crashing hard
     await this.finishedSaving
   }
 

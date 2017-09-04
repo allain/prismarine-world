@@ -4,6 +4,7 @@
   "description": "The core implementation of worlds for prismarine",
   "main": "index.js",
   "scripts": {
+    "benchmark": "bench-csv ./benchmarks/world.js -o ./benchmarks/results/world.csv",
     "posttest": "npm run lint",
     "lint": "eslint .",
     "test": "mocha test/"
@@ -30,6 +31,7 @@
   },
   "homepage": "https://github.com/PrismarineJS/prismarine-world",
   "devDependencies": {
+    "bench-csv": "^2.2.3",
     "buffer-equal": "^1.0.0",
     "eslint": "^4.2.0",
     "eslint-config-standard": "^10.2.1",
