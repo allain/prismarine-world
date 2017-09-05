@@ -25,32 +25,22 @@ class World extends EventEmitter {
   }
 
   initialize (iniFunc, length, width, height = 256, iniPos = new Vec3(0, 0, 0)) {
-    function modulus (a, b) {
-      const m = a % b
-      if (m < 0) { return b + m }
-      return m
-    }
+    const inZone = (x, y, z) => (x >= 0 && x < width) && (z >= 0 && z < length) && (y >= 0 && y < height)
 
-    function inZone (x, y, z) {
-      if (x >= width || x < 0) { return false }
-      if (z >= length || z < 0) {
-        return false
-      }
-      if (y >= height || y < 0) { return false }
-      return true
-    }
     const ps = []
-    const chunkLength = Math.ceil((length + modulus(iniPos.z, 16)) / 16)
-    const chunkWidth = Math.ceil((width + modulus(iniPos.x, 16)) / 16)
+    const chunkLength = (length + (iniPos.z & 0b1111)) >>> 4
+    const chunkWidth = (width + (iniPos.x & 0b1111)) >>> 4
     for (let chunkZ = 0; chunkZ < chunkLength; chunkZ++) {
-      const actualChunkZ = chunkZ + Math.floor(iniPos.z / 16)
+      const actualChunkZ = chunkZ + (iniPos.z >>> 4)
       for (let chunkX = 0; chunkX < chunkWidth; chunkX++) {
-        const actualChunkX = chunkX + Math.floor(iniPos.x / 16)
+        const actualChunkX = chunkX + (iniPos.x >>> 4)
         ps.push(this.getColumn(actualChunkX, actualChunkZ)
           .then(chunk => {
-            const offsetX = chunkX * 16 - modulus(iniPos.x, 16)
-            const offsetZ = chunkZ * 16 - modulus(iniPos.z, 16)
-            chunk.initialize((x, y, z) => inZone(x + offsetX, y - iniPos.y, z + offsetZ) ? iniFunc(x + offsetX, y - iniPos.y, z + offsetZ) : null)
+            const offsetX = (chunkX << 4) - (iniPos.x & 0b1111)
+            const offsetZ = (chunkZ << 4) - (iniPos.z & 0b1111)
+            chunk.initialize((x, y, z) => inZone(x + offsetX, y - iniPos.y, z + offsetZ)
+              ? iniFunc(x + offsetX, y - iniPos.y, z + offsetZ)
+              : null)
             return this.setColumn(actualChunkX, actualChunkZ, chunk)
           })
           .then(() => ({chunkX: actualChunkX, chunkZ: actualChunkZ})))
@@ -61,27 +51,25 @@ class World extends EventEmitter {
 
   async getColumn (chunkX, chunkZ) {
     await Promise.resolve()
-    var key = columnKeyXZ(chunkX, chunkZ)
+    const key = columnKeyXZ(chunkX, chunkZ)
 
-    if (!this.columns[key]) {
-      var chunk = null
-      if (this.anvil != null) {
-        var data = await this.anvil.load(chunkX, chunkZ)
-        if (data != null) { chunk = data }
-      }
-      const loaded = chunk != null
-      if (!loaded && this.chunkGenerator) {
-        chunk = this.chunkGenerator(chunkX, chunkZ)
-      }
-      if (chunk != null) { await this.setColumn(chunkX, chunkZ, chunk, !loaded) }
+    if (this.columns[key]) {
+      return this.columns[key]
     }
 
-    return this.columns[key]
+    const loadedChunk = this.anvil && await this.anvil.load(chunkX, chunkZ)
+
+    const chunk = loadedChunk || (this.chunkGenerator ? this.chunkGenerator(chunkX, chunkZ) : null)
+    if (chunk) {
+      await this.setColumn(chunkX, chunkZ, chunk, !loadedChunk)
+    }
+
+    return chunk
   };
 
   async setColumn (chunkX, chunkZ, chunk, save = true) {
     await Promise.resolve()
-    var key = columnKeyXZ(chunkX, chunkZ)
+    const key = columnKeyXZ(chunkX, chunkZ)
     this.columnsArray.push({chunkX: chunkX, chunkZ: chunkZ, column: chunk})
     this.columns[key] = chunk
 
@@ -95,21 +83,23 @@ class World extends EventEmitter {
         return
       }
       const {chunkX, chunkZ} = this.savingQueue.pop()
-      this.finishedSaving = Promise.all([this.finishedSaving,
-        this.anvil.save(chunkX, chunkZ, this.columns[columnKeyXZ(chunkX, chunkZ)])])
+      this.finishedSaving = Promise.all([
+        this.finishedSaving,
+        this.anvil.save(chunkX, chunkZ, this.columns[columnKeyXZ(chunkX, chunkZ)])
+      ])
     }, this.savingInterval)
   }
 
   async waitSaving () {
-    await new Promise(resolve => {
-      let intervalId = setInterval(() => {
+    // this.once('doneSaving', () => {}) crashes hard
+    await new Promise((resolve) => {
+      let waitingId = setInterval(() => {
         if (this.savingQueue.length === 0) {
-          clearInterval(intervalId)
+          clearInterval(waitingId)
           resolve()
         }
       }, 1)
     })
-    // await once(this, 'doneSaving') crashing hard
     await this.finishedSaving
   }
 
@@ -122,9 +112,11 @@ class World extends EventEmitter {
   }
 
   async saveAt (pos) {
-    var chunkX = Math.floor(pos.x / 16)
-    var chunkZ = Math.floor(pos.z / 16)
-    if (this.anvil) { this.queueSaving(chunkX, chunkZ) }
+    if (this.anvil) {
+      const chunkX = pos.x >>> 4
+      const chunkZ = pos.z >>> 4
+      this.queueSaving(chunkX, chunkZ)
+    }
   }
 
   getColumns () {
@@ -132,8 +124,8 @@ class World extends EventEmitter {
   };
 
   async getColumnAt (pos) {
-    var chunkX = Math.floor(pos.x / 16)
-    var chunkZ = Math.floor(pos.z / 16)
+    var chunkX = pos.x >>> 4
+    var chunkZ = pos.z >>> 4
     return this.getColumn(chunkX, chunkZ)
   };
 
